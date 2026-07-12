@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System.Windows.Threading;
 using RuneshapePriceChecker.Configuration;
 using RuneshapePriceChecker.Pricing;
@@ -192,6 +192,16 @@ public sealed class DashboardService(DashboardLogSink sink, DebugMetricsCollecto
         _ = (Window?.Dispatcher.InvokeAsync(() => Window.SetReRunSetupTrigger(() =>
         {
             ResetInitialSetupComplete();
+            dashboardLogger?.LogInformation("Re-run Setup triggered from UI.");
+            trigger();
+        })));
+    }
+
+    public void SetRitualSetupTrigger(Action trigger)
+    {
+        _ = (Window?.Dispatcher.InvokeAsync(() => Window.SetRitualSetupTrigger(() =>
+        {
+            dashboardLogger?.LogInformation("Ritual Setup triggered from UI.");
             trigger();
         })));
     }

@@ -126,7 +126,7 @@ public sealed class PricingOverlayRenderer(
                 logger.LogTrace("PriceOverlay: auto thresholds maxPrice={MaxPrice} red={Red} orange={Orange} green={Green}",
                     maxPrice, pricing.RedThreshold, pricing.OrangeThreshold, pricing.GreenThreshold);
             }
-            var entries = BuildEntries(snapshot, pricesByItemName, rows, pricing);
+            var entries = BuildEntries(snapshot, pricesByItemName, rows, pricing, _appOptions.CurrentValue);
             logger.LogTrace("PriceOverlay: built {EntryCount} entries from {ItemCount} items, rows={RowCount}", entries.Count, itemCount, rows.Count);
 
             // Scale font proportionally to window height (1080p = scale 1.0, 4k = scale 2.0)
@@ -162,7 +162,8 @@ public sealed class PricingOverlayRenderer(
         LeagueWindowSnapshot snapshot,
         IReadOnlyDictionary<string, PriceQuote?> pricesByItemName,
         List<Rectangle> rows,
-        PricingCacheOptions pricing)
+        PricingCacheOptions pricing,
+        AppOptions appOptions)
     {
         var count = Math.Min(snapshot.ItemNames.Count, rows.Count);
         var entries = new List<OverlayRowEntry>(count);
@@ -177,14 +178,14 @@ public sealed class PricingOverlayRenderer(
                 continue;
             }
 
-            var segments = BuildTextSegments(quote, pricing);
+            var segments = BuildTextSegments(quote, pricing, appOptions);
             entries.Add(new OverlayRowEntry(row.Y, row.Height, segments));
         }
 
         return entries;
     }
 
-    private static List<OverlayTextSegment> BuildTextSegments(PriceQuote quote, PricingCacheOptions pricing)
+    private static List<OverlayTextSegment> BuildTextSegments(PriceQuote quote, PricingCacheOptions pricing, AppOptions appOptions)
     {
         var fallbackColor = TryParseDisplayedChaosEquivalent(quote.Label, pricing, out var parsedDisplayValue)
             ? GetPriceColor(parsedDisplayValue, pricing)
@@ -204,9 +205,16 @@ public sealed class PricingOverlayRenderer(
 
         if (!quote.IsRange)
         {
+            var singleSegments = new List<OverlayTextSegment>();
             if (quote.VolumeLevel != VolumeLevel.Normal)
-                return [new OverlayTextSegment("\u26A0  ", iconColor, 0f), new OverlayTextSegment(quote.Label, fallbackColor, GetDivineGlowStrength(quote.Label))];
-            return [new OverlayTextSegment(quote.Label, fallbackColor, GetDivineGlowStrength(quote.Label))];
+                singleSegments.Add(new OverlayTextSegment("\u26A0  ", iconColor, 0f));
+            singleSegments.Add(new OverlayTextSegment(quote.Label, fallbackColor, GetDivineGlowStrength(quote.Label)));
+            
+            if (appOptions.DebugMode)
+            {
+                singleSegments.Add(new OverlayTextSegment($" [{pricing.PricingSource}]", Color.FromArgb(255, 150, 150, 150), 0f));
+            }
+            return singleSegments;
         }
 
         // The separator must stay as " -", otherwise it looks weird sometimes
@@ -214,7 +222,12 @@ public sealed class PricingOverlayRenderer(
         var splitIndex = quote.Label.IndexOf(separator, StringComparison.Ordinal);
         if (splitIndex < 0)
         {
-            return [new OverlayTextSegment(quote.Label, fallbackColor, GetDivineGlowStrength(quote.Label))];
+            var fallbackSegments = new List<OverlayTextSegment> { new OverlayTextSegment(quote.Label, fallbackColor, GetDivineGlowStrength(quote.Label)) };
+            if (appOptions.DebugMode)
+            {
+                fallbackSegments.Add(new OverlayTextSegment($" [{pricing.PricingSource}]", Color.FromArgb(255, 150, 150, 150), 0f));
+            }
+            return fallbackSegments;
         }
 
         var leftText = quote.Label[..splitIndex];
@@ -234,6 +247,12 @@ public sealed class PricingOverlayRenderer(
         segments.Add(new OverlayTextSegment(leftText, leftColor, GetDivineGlowStrength(leftText)));
         segments.Add(new OverlayTextSegment(separator, Color.White, 0f));
         segments.Add(new OverlayTextSegment(rightText, rightColor, GetDivineGlowStrength(rightText)));
+        
+        if (appOptions.DebugMode)
+        {
+            segments.Add(new OverlayTextSegment($" [{pricing.PricingSource}]", Color.FromArgb(255, 150, 150, 150), 0f));
+        }
+
         return segments;
     }
 

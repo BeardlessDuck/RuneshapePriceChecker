@@ -2,6 +2,12 @@ using System.Drawing.Drawing2D;
 
 namespace RuneshapePriceChecker.Overlay;
 
+internal enum SetupMode
+{
+    LeagueList,
+    RitualGrid
+}
+
 internal sealed class SetupOverlayForm : OverlayFormBase
 {
     private const int TopBarHeight = 80;
@@ -26,8 +32,11 @@ internal sealed class SetupOverlayForm : OverlayFormBase
     public event Action<Rectangle>? SetupConfirmed;
     public event Action? GoBackClicked;
 
-    public SetupOverlayForm(Rectangle initialRect, Rectangle gameBounds)
+    private readonly SetupMode _mode;
+
+    public SetupOverlayForm(Rectangle initialRect, Rectangle gameBounds, SetupMode mode = SetupMode.LeagueList)
     {
+        _mode = mode;
         _captureRect = initialRect;
         _gameBounds = gameBounds;
 
@@ -83,9 +92,13 @@ internal sealed class SetupOverlayForm : OverlayFormBase
 
     private void BuildControls(int x, int y)
     {
+        var titleText = _mode == SetupMode.RitualGrid 
+            ? "Position the red box around the Ritual item grid" 
+            : "Position the red box over the PoE2 item list panel";
+
         _titleLabel = new Label
         {
-            Text = "Position the red box over the PoE2 item list panel",
+            Text = titleText,
             Font = new Font("Segoe UI", 12f, FontStyle.Bold),
             ForeColor = Color.White,
             BackColor = Color.FromArgb(28, 32, 40),
@@ -150,50 +163,56 @@ internal sealed class SetupOverlayForm : OverlayFormBase
         var exampleH = 260;
         Image? exampleImage = null;
 
-        try
+        if (_mode != SetupMode.RitualGrid)
         {
-            var asm = typeof(SetupOverlayForm).Assembly;
-            var resourceName = asm.GetManifestResourceNames()
-                .FirstOrDefault(n => n.EndsWith("example.png", StringComparison.OrdinalIgnoreCase));
-            if (resourceName is not null)
+            try
             {
-                using var stream = asm.GetManifestResourceStream(resourceName);
-                if (stream is not null)
+                var asm = typeof(SetupOverlayForm).Assembly;
+                var resourceName = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("example.png", StringComparison.OrdinalIgnoreCase));
+                if (resourceName is not null)
                 {
-                    exampleImage = Image.FromStream(stream);
-                    exampleW = exampleImage.Width;
-                    exampleH = exampleImage.Height;
+                    using var stream = asm.GetManifestResourceStream(resourceName);
+                    if (stream is not null)
+                    {
+                        exampleImage = Image.FromStream(stream);
+                        exampleW = exampleImage.Width;
+                        exampleH = exampleImage.Height;
+                    }
                 }
             }
+            catch { exampleImage?.Dispose(); exampleImage = null; }
         }
-        catch { exampleImage?.Dispose(); exampleImage = null; }
 
         var exampleX = Math.Max(
             _captureRect.X - _formOriginX + _captureRect.Width + 80,
             (int)(_screenBounds.Width * 0.375));
         var exampleY = y;
 
-        _exampleLabel = new Label
+        if (_mode != SetupMode.RitualGrid)
         {
-            Text = "Example:",
-            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(200, 200, 210),
-            BackColor = Color.FromArgb(28, 32, 40),
-            Location = new Point(exampleX, exampleY),
-            AutoSize = true
-        };
-        Controls.Add(_exampleLabel);
+            _exampleLabel = new Label
+            {
+                Text = "Example:",
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(200, 200, 210),
+                BackColor = Color.FromArgb(28, 32, 40),
+                Location = new Point(exampleX, exampleY),
+                AutoSize = true
+            };
+            Controls.Add(_exampleLabel);
 
-        _exampleBox = new PictureBox
-        {
-            Location = new Point(exampleX, exampleY + 20),
-            Size = new Size(exampleW, exampleH),
-            BackColor = Color.FromArgb(20, 24, 30),
-            SizeMode = PictureBoxSizeMode.Zoom,
-            BorderStyle = BorderStyle.FixedSingle,
-            Image = exampleImage
-        };
-        Controls.Add(_exampleBox);
+            _exampleBox = new PictureBox
+            {
+                Location = new Point(exampleX, exampleY + 20),
+                Size = new Size(exampleW, exampleH),
+                BackColor = Color.FromArgb(20, 24, 30),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                Image = exampleImage
+            };
+            Controls.Add(_exampleBox);
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e)

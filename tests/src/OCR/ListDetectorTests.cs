@@ -48,8 +48,11 @@ public class ListDetectorTests
         return bmp;
     }
 
-    private static Bitmap SharedBright => field ??= CreateBrightBitmap();
-    private static Bitmap SharedDark => field ??= CreateDarkBitmap();
+    private static Bitmap _sharedBright;
+    private static Bitmap SharedBright => _sharedBright ??= CreateBrightBitmap();
+    
+    private static Bitmap _sharedDark;
+    private static Bitmap SharedDark => _sharedDark ??= CreateDarkBitmap();
 
     [Fact]
     public void Update_InitialState_IsNotOpen()

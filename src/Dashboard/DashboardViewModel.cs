@@ -41,6 +41,7 @@ public sealed class DashboardViewModel(string configPath)
     public bool RememberDebugPanel { get; set; }
     public bool CloseWithPoE2 { get; set; }
     public bool OpenWithPoE2 { get; set; }
+    public bool AppDebugMode { get; set; } = true;
     public string CaptureMode { get; set; } = "printwindow";
     public int ScanIntervalMs { get; set; } = 100;
     public bool OverlayScaleAuto { get; set; } = true;
@@ -49,6 +50,7 @@ public sealed class DashboardViewModel(string configPath)
     public Action<IProgress<int>>? OnUpdateTriggered { get; set; }
     public Action? OnSetupContinue { get; set; }
     public Action? OnReRunSetup { get; set; }
+    public Action? OnRitualSetup { get; set; }
 
     public void OnLogEntry(LogEntry entry)
     {
@@ -109,6 +111,7 @@ public sealed class DashboardViewModel(string configPath)
                 RememberDebugPanel = app.Val("RememberDebugPanel", false);
                 CloseWithPoE2 = app.Val("CloseWithPoE2", false);
                 OpenWithPoE2 = app.Val("OpenWithPoE2", false);
+                AppDebugMode = app.Val("DebugMode", true);
             }
 
             if (root["Pricing"] is JsonNode pricing)
@@ -201,6 +204,7 @@ public sealed class DashboardViewModel(string configPath)
                 app["RememberDebugPanel"] = RememberDebugPanel;
                 app["CloseWithPoE2"] = CloseWithPoE2;
                 app["OpenWithPoE2"] = OpenWithPoE2;
+                app["DebugMode"] = AppDebugMode;
                 app["PricingOverlay"] = PricingOverlay;
                 app["Banner"] = Banner;
             }

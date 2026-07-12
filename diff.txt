@@ -1,0 +1,579 @@
+diff --git a/Directory.Build.props b/Directory.Build.props
+index e466a62..925fa5c 100644
+--- a/Directory.Build.props
++++ b/Directory.Build.props
+@@ -4,7 +4,8 @@
+     <ImplicitUsings>enable</ImplicitUsings>
+     <Nullable>enable</Nullable>
+     <LangVersion>latest</LangVersion>
+-    <Version>1.0.8</Version>
++    <Version>1.0.9.103</Version>
++    <InformationalVersion>1.0.9.103+20260706.2028</InformationalVersion>
+     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+     <RunAnalyzersOnEveryBuild>true</RunAnalyzersOnEveryBuild>
+     <AnalysisLevel>latest-recommended</AnalysisLevel>
+diff --git a/RuneshapePriceChecker.csproj b/RuneshapePriceChecker.csproj
+index 94ed794..d2e024f 100644
+--- a/RuneshapePriceChecker.csproj
++++ b/RuneshapePriceChecker.csproj
+@@ -13,6 +13,7 @@
+     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+     <NoWarn>$(NoWarn);CA1873;CA2101</NoWarn>
+     <AssemblyName>RuneshapePriceChecker</AssemblyName>
++    <Version>1.0.9.102</Version>
+     <ApplicationIcon>img\rune.ico</ApplicationIcon>
+   </PropertyGroup>
+ 
+diff --git a/src/App/LeaguePricingWorker.cs b/src/App/LeaguePricingWorker.cs
+index 5bd77e7..4ef8573 100644
+--- a/src/App/LeaguePricingWorker.cs
++++ b/src/App/LeaguePricingWorker.cs
+@@ -80,9 +80,11 @@ public sealed class LeaguePricingWorker(
+ 
+         while (!stoppingToken.IsCancellationRequested)
+         {
+-            logger.LogTrace("LeaguePricingWorker loop iteration");
+             try
+             {
++                logger.LogTrace("LeaguePricingWorker loop iteration");
++                try
++                {
+                 // Close with PoE2: shut down when the game exits.
+                 // Process.GetProcessesByName is expensive so use a 5-second cache.
+                 if (appOptions.CurrentValue.CloseWithPoE2)
+@@ -132,6 +134,7 @@ public sealed class LeaguePricingWorker(
+                     {
+                         lastOcrStart = Stopwatch.GetTimestamp();
+                         logger.LogTrace("Worker: starting OCR task");
++                        RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: calling StartSnapshotReadTask");
+                         inFlightSnapshotTask = StartSnapshotReadTask(reader, stoppingToken);
+                     }
+                     else
+@@ -154,7 +157,9 @@ public sealed class LeaguePricingWorker(
+                     {
+                         _lastOcrDurationMs = Stopwatch.GetElapsedTime(lastOcrStart).TotalMilliseconds;
+                         logger.LogTrace("Worker: OCR task completed, reading snapshot");
++                        RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: await inFlightSnapshotTask");
+                         latestSnapshot = await inFlightSnapshotTask.ConfigureAwait(false);
++                        RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: snapshot retrieved");
+                         hasCompletedSnapshot = true;
+                         logger.LogTrace("Worker: snapshot has {Count} items, interfaceDetected={Detected}", latestSnapshot.ItemNames.Count, latestSnapshot.InterfaceDetected);
+                     }
+@@ -346,13 +351,21 @@ public sealed class LeaguePricingWorker(
+                 if (dashboard.Metrics is { } m)
+                     m.DebugOverlayActive = ocrOptions.CurrentValue.DebugOverlay;
+                 logger.LogTrace("Worker: calling Render");
++                RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: calling overlayRenderer.Render");
+                 overlayRenderer.Render(snapshot, prices);
++                RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: Render complete");
+                 logger.LogTrace("Worker: Render complete");
+             }
+             catch (Exception ex)
+             {
+                 logger.LogError(ex, "Failed to render overlay snapshot: {Context}", ErrorContext.FromException(ex));
+             }
++            }
++            catch (Exception ex)
++            {
++                RuneshapePriceChecker.Startup.CrashLogger.WriteCrash("Fatal BackgroundService Error", ex);
++                throw;
++            }
+         }
+     }
+ 
+diff --git a/src/Dashboard/DashboardWindow.xaml.cs b/src/Dashboard/DashboardWindow.xaml.cs
+index ce531f1..7696c27 100644
+--- a/src/Dashboard/DashboardWindow.xaml.cs
++++ b/src/Dashboard/DashboardWindow.xaml.cs
+@@ -1,4 +1,4 @@
+-﻿using System.Collections.ObjectModel;
++using System.Collections.ObjectModel;
+ using System.ComponentModel;
+ using System.Diagnostics;
+ using System.Globalization;
+@@ -1480,7 +1480,7 @@ public sealed partial class DashboardWindow : Window
+         SetSlotText(DbgSlotRecognizeFull, slots, DebugMetricsCollector.SlotIndex.Recognize);
+         SetSlotText(DbgSlotTsv, slots, DebugMetricsCollector.SlotIndex.TsvParse);
+         SetSlotText(DbgSlotPost, slots, DebugMetricsCollector.SlotIndex.PostProcess);
+-        _ = (DbgSlotCacheHitFull?.Text = snap.CacheHits > 0 ? $"{snap.CacheHits:N0}" : "—");
++        if (DbgSlotCacheHitFull != null) DbgSlotCacheHitFull.Text = snap.CacheHits > 0 ? $"{snap.CacheHits:N0}" : "—";
+ 
+         // Toggle slot breakdown layout based on OCR backend.
+         // Fall back to the combo box if the metrics snapshot hasn't updated yet.
+@@ -1488,8 +1488,8 @@ public sealed partial class DashboardWindow : Window
+         var backendFromCombo = (OcrBackendCombo.SelectedItem as string)?.ToLowerInvariant() ?? "";
+         var isTesseract = backendFromSnapshot.Contains("tesseract", StringComparison.OrdinalIgnoreCase)
+             || backendFromCombo.Contains("tesseract", StringComparison.OrdinalIgnoreCase);
+-        _ = (SlotBreakdownCompact?.Visibility = isTesseract ? Visibility.Collapsed : Visibility.Visible);
+-        _ = (SlotBreakdownFull?.Visibility = isTesseract ? Visibility.Visible : Visibility.Collapsed);
++        if (SlotBreakdownCompact != null) SlotBreakdownCompact.Visibility = isTesseract ? Visibility.Collapsed : Visibility.Visible;
++        if (SlotBreakdownFull != null) SlotBreakdownFull.Visibility = isTesseract ? Visibility.Visible : Visibility.Collapsed;
+ 
+         // Check PoE2 foreground directly so the status updates independently of OCR capture timing.
+         var isForeground = false;
+@@ -2335,11 +2335,14 @@ public sealed class LogEntryViewModel : INotifyPropertyChanged
+     public Brush? ForegroundBrush { get; set; }
+     public Microsoft.Extensions.Logging.LogLevel LogLevel { get; set; }
+ 
+-    public string TimestampText { get; set { field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TimestampText))); } } = "";
++    private string _timestampText = "";
++    public string TimestampText { get => _timestampText; set { _timestampText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TimestampText))); } }
+ 
+-    public string MessageText { get; set { field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MessageText))); } } = "";
++    private string _messageText = "";
++    public string MessageText { get => _messageText; set { _messageText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MessageText))); } }
+ 
+-    public string CountText { get; set { field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountText))); } } = "";
++    private string _countText = "";
++    public string CountText { get => _countText; set { _countText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountText))); } }
+ 
+     public event PropertyChangedEventHandler? PropertyChanged;
+ 
+diff --git a/src/OCR/Capture/OcrCaptureStrategy.cs b/src/OCR/Capture/OcrCaptureStrategy.cs
+index ce2c230..15b0250 100644
+--- a/src/OCR/Capture/OcrCaptureStrategy.cs
++++ b/src/OCR/Capture/OcrCaptureStrategy.cs
+@@ -77,9 +77,13 @@ internal sealed partial class OcrCaptureStrategy(ILogger<OcrCaptureStrategy> log
+         var data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+         try
+         {
+-            var length = Math.Abs(data.Stride) * data.Height;
++            var absStride = Math.Abs(data.Stride);
++            var length = absStride * data.Height;
+             var bytes = new byte[length];
+-            Marshal.Copy(data.Scan0, bytes, 0, length);
++            for (var y = 0; y < data.Height; y++)
++            {
++                Marshal.Copy(data.Scan0 + (y * data.Stride), bytes, y * absStride, absStride);
++            }
+ 
+             var min = 255;
+             var max = 0;
+diff --git a/src/OCR/OcrImagePreprocessor.cs b/src/OCR/OcrImagePreprocessor.cs
+index 00c0b17..814f01e 100644
+--- a/src/OCR/OcrImagePreprocessor.cs
++++ b/src/OCR/OcrImagePreprocessor.cs
+@@ -6,6 +6,26 @@ namespace RuneshapePriceChecker.OCR;
+ 
+ internal static class OcrImagePreprocessor
+ {
++    private static byte[] CopyPixelsFrom(BitmapData data)
++    {
++        var absStride = Math.Abs(data.Stride);
++        var bytes = new byte[absStride * data.Height];
++        for (var y = 0; y < data.Height; y++)
++        {
++            System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + (y * data.Stride), bytes, y * absStride, absStride);
++        }
++        return bytes;
++    }
++
++    private static void CopyPixelsTo(byte[] bytes, BitmapData data)
++    {
++        var absStride = Math.Abs(data.Stride);
++        for (var y = 0; y < data.Height; y++)
++        {
++            System.Runtime.InteropServices.Marshal.Copy(bytes, y * absStride, data.Scan0 + (y * data.Stride), absStride);
++        }
++    }
++
+     public static string[] SplitAndTrim(string text)
+     {
+         return text
+@@ -22,7 +42,6 @@ internal static class OcrImagePreprocessor
+             File.Delete(path);
+         bitmap.Save(path, ImageFormat.Png);
+     }
+-
+     public static Bitmap KeepBlackAndNeighbors(Bitmap source)
+     {
+         var width = source.Width;
+@@ -30,21 +49,23 @@ internal static class OcrImagePreprocessor
+         var rect = new Rectangle(0, 0, width, height);
+         var srcData = source.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+         var stride = srcData.Stride;
+-        var length = Math.Abs(stride) * height;
++        var absStride = Math.Abs(stride);
++        var length = absStride * height;
+         var srcBytes = new byte[length];
+-        Marshal.Copy(srcData.Scan0, srcBytes, 0, length);
++        for (var y = 0; y < height; y++)
++        {
++            Marshal.Copy(srcData.Scan0 + (y * stride), srcBytes, y * absStride, absStride);
++        }
+         source.UnlockBits(srcData);
+ 
+         // Flat 1D byte array for mask: 0=discard, 1=keep. Better cache locality than bool[,].
+         var keep = new byte[width * height];
+-
+-        // First pass: for each sufficiently dark pixel, mark a neighborhood as kept.
+         // At 1440p+ the game renders more detail, so use a stricter threshold (13)
+         // to avoid picking up rune/UI noise as text rows. on 1080p and lower, 15 is fine.
+         var blackThreshold = width >= 600 ? 13 : 15;
+         for (var y = 0; y < height; y++)
+         {
+-            var rowOffset = y * stride;
++            var rowOffset = y * Math.Abs(stride);
+             for (var x = 0; x < width; x++)
+             {
+                 var idx = rowOffset + (x * 3);
+@@ -71,7 +92,7 @@ internal static class OcrImagePreprocessor
+         // the filter should be safe.
+         for (var y = 0; y < height; y++)
+         {
+-            var srcRow = y * stride;
++            var srcRow = y * Math.Abs(stride);
+             for (var x = 0; x < width; x++)
+             {
+                 var si = srcRow + (x * 3);
+@@ -95,8 +116,8 @@ internal static class OcrImagePreprocessor
+ 
+         for (var y = 0; y < height; y++)
+         {
+-            var srcRow = y * stride;
+-            var dstRow = y * dstStride;
++            var srcRow = y * Math.Abs(stride);
++            var dstRow = y * Math.Abs(dstStride);
+             var keepRow = y * width;
+             for (var x = 0; x < width; x++)
+             {
+@@ -140,14 +161,12 @@ internal static class OcrImagePreprocessor
+             var kernelRadius = Math.Clamp(Math.Min(width, height) / 40, 4, 10);
+             var contrastBias = Math.Clamp((threshold - 100) / 6, 6, 20);
+ 
+-            var length = Math.Abs(data.Stride) * data.Height;
+-            var bytes = new byte[length];
+-            Marshal.Copy(data.Scan0, bytes, 0, length);
++            var bytes = CopyPixelsFrom(data);
+             var grayscalePixels = new byte[width * height];
+ 
+             for (var y = 0; y < height; y++)
+             {
+-                var rowOffset = y * data.Stride;
++                var rowOffset = y * Math.Abs(data.Stride);
+                 var grayOffset = y * width;
+                 for (var x = 0; x < width; x++)
+                 {
+@@ -199,7 +218,7 @@ internal static class OcrImagePreprocessor
+ 
+             for (var y = 0; y < height; y++)
+             {
+-                var rowOffset = y * data.Stride;
++                var rowOffset = y * Math.Abs(data.Stride);
+                 var binaryOffset = y * width;
+                 for (var x = 0; x < width; x++)
+                 {
+@@ -211,7 +230,7 @@ internal static class OcrImagePreprocessor
+                 }
+             }
+ 
+-            Marshal.Copy(bytes, 0, data.Scan0, length);
++            CopyPixelsTo(bytes, data);
+             grayscale.UnlockBits(data);
+             var result = grayscale;
+             grayscale = null;
+@@ -238,8 +257,7 @@ internal static class OcrImagePreprocessor
+         var srcRect = new Rectangle(0, 0, srcW, srcH);
+         var srcData = source.LockBits(srcRect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+         var srcStride = srcData.Stride;
+-        var srcBytes = new byte[Math.Abs(srcStride) * srcH];
+-        Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
++        var srcBytes = CopyPixelsFrom(srcData);
+         source.UnlockBits(srcData);
+ 
+         var upscaled = new Bitmap(dstW, dstH, PixelFormat.Format24bppRgb);
+@@ -271,7 +289,7 @@ internal static class OcrImagePreprocessor
+             }
+         }
+ 
+-        Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
++        CopyPixelsTo(dstBytes, dstData);
+         upscaled.UnlockBits(dstData);
+         return upscaled;
+     }
+@@ -301,14 +319,13 @@ internal static class OcrImagePreprocessor
+             var srcRect = new Rectangle(0, 0, srcW, srcH);
+             var srcData = source.LockBits(srcRect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+             var srcStride = srcData.Stride;
+-            var srcBytes = new byte[Math.Abs(srcStride) * srcH];
+-            Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
++            var srcBytes = CopyPixelsFrom(srcData);
+             source.UnlockBits(srcData);
+ 
+             for (var y = 0; y < srcH; y++)
+             {
+-                var srcRow = y * srcStride;
+-                var dstRow = ((y + border) * dstStride) + (border * 3);
++                var srcRow = y * Math.Abs(srcStride);
++                var dstRow = ((y + border) * Math.Abs(dstStride)) + (border * 3);
+                 for (var x = 0; x < srcW; x++)
+                 {
+                     var si = srcRow + (x * 3);
+@@ -320,7 +337,7 @@ internal static class OcrImagePreprocessor
+             }
+         }
+ 
+-        Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
++        CopyPixelsTo(dstBytes, dstData);
+         bordered.UnlockBits(dstData);
+         return bordered;
+     }
+@@ -334,9 +351,7 @@ internal static class OcrImagePreprocessor
+         try
+         {
+             var stride = data.Stride;
+-            var len = Math.Abs(stride) * height;
+-            var bytes = new byte[len];
+-            Marshal.Copy(data.Scan0, bytes, 0, len);
++            var bytes = CopyPixelsFrom(data);
+ 
+             var minX = width;
+             var minY = height;
+@@ -402,14 +417,13 @@ internal static class OcrImagePreprocessor
+             var srcBpp = Image.GetPixelFormatSize(source.PixelFormat) / 8;
+             var srcStride = srcData.Stride;
+             var dstStride = dstData.Stride;
+-            var srcBytes = new byte[Math.Abs(srcStride) * h];
++            var srcBytes = CopyPixelsFrom(srcData);
+             var dstBytes = new byte[Math.Abs(dstStride) * h];
+-            Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
+ 
+             for (var y = 0; y < h; y++)
+             {
+-                var srcRow = y * srcStride;
+-                var dstRow = y * dstStride;
++                var srcRow = y * Math.Abs(srcStride);
++                var dstRow = y * Math.Abs(dstStride);
+                 for (var x = 0; x < w; x++)
+                 {
+                     var si = srcRow + (x * srcBpp);
+@@ -424,7 +438,7 @@ internal static class OcrImagePreprocessor
+                     dstBytes[di + 2] = lum;
+                 }
+             }
+-            Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
++            CopyPixelsTo(dstBytes, dstData);
+         }
+         finally
+         {
+@@ -464,9 +478,7 @@ internal static class OcrImagePreprocessor
+             var width = data.Width;
+             var height = data.Height;
+             var stride = data.Stride;
+-            var rawLength = Math.Abs(stride) * height;
+-            var raw = new byte[rawLength];
+-            Marshal.Copy(data.Scan0, raw, 0, rawLength);
++            var raw = CopyPixelsFrom(data);
+ 
+             var rgb = new byte[width * height * 3];
+             for (var y = 0; y < height; y++)
+@@ -570,3 +582,4 @@ internal static class OcrImagePreprocessor
+         }
+     }
+ }
++
+diff --git a/src/OCR/OcrLeagueWindowReader.cs b/src/OCR/OcrLeagueWindowReader.cs
+index 58364bd..ecc86e0 100644
+--- a/src/OCR/OcrLeagueWindowReader.cs
++++ b/src/OCR/OcrLeagueWindowReader.cs
+@@ -1,4 +1,4 @@
+-﻿using System.Diagnostics;
++using System.Diagnostics;
+ using System.Drawing.Imaging;
+ using System.Runtime.InteropServices;
+ using RuneshapePriceChecker.App.Dashboard;
+@@ -186,7 +186,9 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+ 
+         try
+         {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: Calling CaptureAndRecognize");
+             var rawText = CaptureAndRecognize(out var attemptedRecognition, out var fromCache);
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: CaptureAndRecognize returned");
+             if (!attemptedRecognition)
+             {
+                 _lastSnapshot = null;
+@@ -226,8 +228,12 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+                 try
+                 {
+                     var stride = data.Stride;
+-                    var bytes = new byte[Math.Abs(stride) * pbmp.Height];
+-                    Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
++                    var absStride = Math.Abs(stride);
++                    var bytes = new byte[absStride * pbmp.Height];
++                    for (var y = 0; y < pbmp.Height; y++)
++                    {
++                        Marshal.Copy(data.Scan0 + (y * stride), bytes, y * absStride, absStride);
++                    }
+ 
+                     // Text column starts at PanelLeftFraction — don't scan left of it
+                     var textColStart = (int)(pbmp.Width * _options.CurrentValue.PanelLeftFraction);
+@@ -244,7 +250,7 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+                         var maxX = 0;
+                         for (var ry = y; ry < yEnd; ry++)
+                         {
+-                            var rowOffset = ry * stride;
++                            var rowOffset = ry * Math.Abs(stride);
+                             for (var rx = textColStart; rx < pbmp.Width; rx++)
+                             {
+                                 if (bytes[rowOffset + (rx * 3)] < 128)
+@@ -454,11 +460,13 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+             (int)(region.Height * opts.PanelTopRowFraction));
+         using (var preCapturePerf = _perf.Measure(OcrPerfTiming.Slot.AnchorCheck))
+         {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: CaptureDesktopRegionDirect (pre-capture check)");
+             using var scanBitmap = CaptureDesktopRegionDirect(scanRect);
+             if (scanBitmap is null || !TryDetectPanelOpen(scanBitmap, options, region))
+             {
+                 _metrics.AnchorCheckFails++;
+                 _metrics.InterfaceDetected = false;
++                RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: TryDetectPanelOpen failed or null");
+                 return string.Empty;
+             }
+             _metrics.AnchorCheckPasses++;
+@@ -468,7 +476,9 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+         string captureMethod;
+         using (_perf.Measure(OcrPerfTiming.Slot.Capture))
+         {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling _captureStrategy.Capture");
+             captureResult = _captureStrategy.Capture(region, _windowResolutionProvider.CurrentWindowCaptureContext, options);
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: _captureStrategy.Capture returned");
+             captureMethod = captureResult.Method;
+         }
+ 
+@@ -534,16 +544,25 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+ #pragma warning disable CA2000 // Ownership transferred; disposed at method exit via explicit Dispose calls
+         Bitmap masked;
+         using (_perf.Measure(OcrPerfTiming.Slot.KeepBlack))
++        {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling KeepBlackAndNeighbors");
+             masked = OcrImagePreprocessor.KeepBlackAndNeighbors(capturedBitmap);
++        }
+         Bitmap preprocessed;
+         using (_perf.Measure(OcrPerfTiming.Slot.Preprocess))
++        {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling PreprocessForOcr");
+             preprocessed = OcrImagePreprocessor.PreprocessForOcr(masked, options);
++        }
+ #pragma warning restore CA2000
+         _lastPreprocessedBitmap?.Dispose();
+         _lastPreprocessedBitmap = new Bitmap(preprocessed);
+         Rectangle? crop;
+         using (_perf.Measure(OcrPerfTiming.Slot.PostProcess))
++        {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling FindContentBounds");
+             crop = OcrImagePreprocessor.FindContentBounds(preprocessed);
++        }
+ 
+         // Shift the left edge of the scan region from the icon column to the
+         // panel text column, so rune icons don't inflate row widths and confuse
+@@ -572,7 +591,11 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+ 
+         int[] rowYs, rowHeights;
+         using (_perf.Measure(OcrPerfTiming.Slot.PostProcess))
++        {
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling DetectRowPositions");
+             (rowYs, rowHeights) = OcrPipeline.DetectRowPositions(preprocessed, crop);
++            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: DetectRowPositions returned");
++        }
+         _lastOcrRowHeights = rowHeights;
+         _lastOcrRowYPositions = rowYs;
+         _lastCropBounds = crop;
+@@ -630,9 +653,11 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+                         string? text;
+                         try
+                         {
++                            RuneshapePriceChecker.Startup.TraceLogger.Log($"OcrLeagueWindowReader: PrepareRowBitmap row={i}");
+                             var rowBitmap = OcrPipeline.PrepareRowBitmap(preprocessed, crop, rowYs[i], rowHeights[i]);
+                             try
+                             {
++                                RuneshapePriceChecker.Startup.TraceLogger.Log($"OcrLeagueWindowReader: RecognizeSingleLine row={i}");
+                                 text = engine.RecognizeSingleLine(rowBitmap);
+                             }
+                             finally
+@@ -804,7 +829,7 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
+                 const int stepY = 4;
+                 for (var y = 0; y < data.Height; y += stepY)
+                 {
+-                    Marshal.Copy(data.Scan0 + (y * stride), rowBytes, 0, stride);
++                    Marshal.Copy(data.Scan0 + (y * data.Stride), rowBytes, 0, stride);
+                     for (var x = 0; x < data.Width; x += stepX)
+                     {
+                         var idx = x * bpp;
+diff --git a/src/OCR/OcrPipeline.cs b/src/OCR/OcrPipeline.cs
+index aa9b8fc..26e18d8 100644
+--- a/src/OCR/OcrPipeline.cs
++++ b/src/OCR/OcrPipeline.cs
+@@ -1,4 +1,4 @@
+-﻿using System.Drawing.Imaging;
++using System.Drawing.Imaging;
+ using Microsoft.Extensions.Logging;
+ 
+ namespace RuneshapePriceChecker.OCR;
+@@ -49,14 +49,18 @@ internal static class OcrPipeline
+         var srcRect = new Rectangle(scanX, scanY, scanW, scanH);
+         var data = source.LockBits(srcRect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+         var stride = data.Stride;
+-        var length = Math.Abs(stride) * scanH;
++        var rowBytesToCopy = scanW * 3;
++        var length = rowBytesToCopy * scanH;
+         var bytes = new byte[length];
+-        System.Runtime.InteropServices.Marshal.Copy(data.Scan0, bytes, 0, length);
++        for (var y = 0; y < scanH; y++)
++        {
++            System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + (y * data.Stride), bytes, y * rowBytesToCopy, rowBytesToCopy);
++        }
+         source.UnlockBits(data);
+ 
+         for (var y = 0; y < scanH; y++)
+         {
+-            var rowOffset = y * stride;
++            var rowOffset = y * rowBytesToCopy;
+             var count = 0;
+             for (var x = 0; x < scanW; x++)
+             {
+diff --git a/src/Overlay/SetupOverlayForm.cs b/src/Overlay/SetupOverlayForm.cs
+index beaf6eb..c775893 100644
+--- a/src/Overlay/SetupOverlayForm.cs
++++ b/src/Overlay/SetupOverlayForm.cs
+@@ -333,17 +333,17 @@ internal sealed class SetupOverlayForm : OverlayFormBase
+         var x = Math.Max(20, _captureRect.X - _formOriginX);
+         var y = Math.Max(20, _captureRect.Y - _formOriginY - TopBarHeight - 20);
+ 
+-        _ = (_titleLabel?.Location = new Point(x, y));
+-        _ = (_hintLabel?.Location = new Point(x, y + 24));
+-        _ = (_confirmBtn?.Location = new Point(x, y + 50));
+-        _ = (_backBtn?.Location = new Point(x + 190, y + 50));
++        if (_titleLabel != null) _titleLabel.Location = new Point(x, y);
++        if (_hintLabel != null) _hintLabel.Location = new Point(x, y + 24);
++        if (_confirmBtn != null) _confirmBtn.Location = new Point(x, y + 50);
++        if (_backBtn != null) _backBtn.Location = new Point(x + 190, y + 50);
+ 
+         var exampleX = Math.Max(
+             _captureRect.X - _formOriginX + _captureRect.Width + 80,
+             (int)(_screenBounds.Width * 0.375));
+ 
+-        _ = (_exampleLabel?.Location = new Point(exampleX, y));
+-        _ = (_exampleBox?.Location = new Point(exampleX, y + 20));
++        if (_exampleLabel != null) _exampleLabel.Location = new Point(exampleX, y);
++        if (_exampleBox != null) _exampleBox.Location = new Point(exampleX, y + 20);
+     }
+ 
+     private Rectangle GetBoxRect()
+diff --git a/tests/src/OCR/ListDetectorTests.cs b/tests/src/OCR/ListDetectorTests.cs
+index 0b299cc..75bea8a 100644
+--- a/tests/src/OCR/ListDetectorTests.cs
++++ b/tests/src/OCR/ListDetectorTests.cs
+@@ -48,8 +48,11 @@ public class ListDetectorTests
+         return bmp;
+     }
+ 
+-    private static Bitmap SharedBright => field ??= CreateBrightBitmap();
+-    private static Bitmap SharedDark => field ??= CreateDarkBitmap();
++    private static Bitmap _sharedBright;
++    private static Bitmap SharedBright => _sharedBright ??= CreateBrightBitmap();
++    
++    private static Bitmap _sharedDark;
++    private static Bitmap SharedDark => _sharedDark ??= CreateDarkBitmap();
+ 
+     [Fact]
+     public void Update_InitialState_IsNotOpen()

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -279,6 +279,111 @@ public sealed class DebugOverlayService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to save custom offsets: {Context} (had {Count} screens)", ErrorContext.FromException(ex), Screen.AllScreens.Length);
+        }
+    }
+
+    public void RunRitualSetup()
+    {
+        if (_setupInProgress) return;
+        _setupInProgress = true;
+        _setupComplete = false;
+
+        logger.LogInformation("RunRitualSetup: starting ritual setup flow");
+        var region = windowResolutionProvider.CurrentCaptureRegion;
+        Rectangle gameBounds;
+
+        if (region is { } r)
+        {
+            var ctx = windowResolutionProvider.CurrentWindowCaptureContext;
+            if (ctx is not null) gameBounds = new Rectangle(ctx.ClientX, ctx.ClientY, ctx.ClientWidth, ctx.ClientHeight);
+            else
+            {
+                var screen = Screen.FromPoint(new Point(r.X, r.Y));
+                gameBounds = screen.Bounds;
+            }
+        }
+        else
+        {
+            var screen = Screen.PrimaryScreen;
+            if (screen is null)
+            {
+                logger.LogError("Setup: no screen available.");
+                _setupInProgress = false;
+                return;
+            }
+            gameBounds = screen.Bounds;
+            r = new OcrCaptureRegion(gameBounds.X + 100, gameBounds.Y + 100, 800, 600);
+        }
+
+        // Start with a large box in the center for Ritual
+        var initialRect = new Rectangle(gameBounds.X + (gameBounds.Width / 2) - 400, gameBounds.Y + (gameBounds.Height / 2) - 300, 800, 600);
+        if (_options.CurrentValue.RitualRegionBounds is { Length: 4 } b)
+        {
+            initialRect = new Rectangle(b[0], b[1], b[2], b[3]);
+        }
+
+        ForceHide();
+
+        var setupThread = new Thread(() =>
+        {
+            logger.LogInformation("RunRitualSetup: entering setup loop");
+            while (true)
+            {
+                using var continueClicked = new ManualResetEventSlim(false);
+                dashboard.SetOnSetupContinue(continueClicked.Set);
+                dashboard.ShowSetupPrompt();
+
+                continueClicked.Wait();
+                dashboard.HideSetupPrompt();
+
+                using var overlayForm = new SetupOverlayForm(initialRect, gameBounds, SetupMode.RitualGrid);
+                var goBack = false;
+
+                overlayForm.SetupConfirmed += SaveRitualOffsets;
+                overlayForm.GoBackClicked += () => goBack = true;
+                overlayForm.Disposed += (_, _) =>
+                {
+                    _setupInProgress = false;
+                    _forceHidden = false;
+                };
+
+                Application.Run(overlayForm);
+                dashboard.BringToFront();
+
+                if (!goBack) break;
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "RuneshapePriceChecker-RitualSetup"
+        };
+        setupThread.SetApartmentState(ApartmentState.STA);
+        setupThread.Start();
+    }
+
+    private void SaveRitualOffsets(Rectangle rect)
+    {
+        try
+        {
+            var configPath = Path.Combine(AppContext.BaseDirectory, "config", "appsettings.json");
+            if (!File.Exists(configPath)) return;
+
+            var json = File.ReadAllText(configPath, Encoding.UTF8);
+            var root = JsonNode.Parse(json);
+            if (root is null) return;
+
+            var ocrNode = root["OCR"] as JsonObject ?? [];
+            ocrNode["RitualRegionBounds"] = new JsonArray(rect.X, rect.Y, rect.Width, rect.Height);
+            root["OCR"] = ocrNode;
+
+            File.WriteAllText(configPath, root.ToJsonString(new() { WriteIndented = true }) + Environment.NewLine, Encoding.UTF8);
+
+            _setupComplete = true;
+            logger.LogInformation("SaveRitualOffsets: setup confirmed, offsets saved (X={X} Y={Y} W={W} H={H})", rect.X, rect.Y, rect.Width, rect.Height);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to save ritual offsets: {Context}", ErrorContext.FromException(ex));
         }
     }
 

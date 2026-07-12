@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace RuneshapePriceChecker.OCR;
 
@@ -55,4 +55,8 @@ public sealed class OcrOptions
     public int PanelBlackPixelMaxSum { get; set; } = 20;
     [Range(1, 10000)]
     public int PanelMinBlackPixels { get; set; } = 60;
+
+    // Configured Ritual window grid bounds: [X, Y, Width, Height] in screen coordinates.
+    // Null means it has not been configured.
+    public int[]? RitualRegionBounds { get; set; }
 }

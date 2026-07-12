@@ -205,7 +205,10 @@ var host = Host.CreateDefaultBuilder(args)
         _ = services.AddSingleton<IPoe2WindowResolutionProvider>(sp => sp.GetRequiredService<Poe2WindowResolutionService>());
 
         _ = services.AddSingleton<OcrLeagueWindowReader>();
+        _ = services.AddSingleton<RitualStateTracker>();
+        _ = services.AddHostedService<RitualPricingWorker>();
         _ = services.AddSingleton<PricingOverlayRenderer>();
+        _ = services.AddSingleton<RitualOverlayRenderer>();
         _ = services.AddSingleton(sp =>
         {
             var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
@@ -256,6 +259,7 @@ OcrPipeline.SetLogger(host.Services.GetRequiredService<ILoggerFactory>().CreateL
 
 var debugOverlay = host.Services.GetRequiredService<DebugOverlayService>();
 dashboardService.SetReRunSetupTrigger(debugOverlay.RunInitialSetup);
+dashboardService.SetRitualSetupTrigger(debugOverlay.RunRitualSetup);
 
 var bugReportLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<BugReportService>();
 var ocrOptions = host.Services.GetRequiredService<IOptionsMonitor<OcrOptions>>();

@@ -415,6 +415,7 @@ public sealed partial class DashboardWindow : Window
         AlwaysOnTopCheck.IsChecked = _vm.AlwaysOnTop;
         CloseWithPoE2Check.IsChecked = _vm.CloseWithPoE2;
         OpenWithPoE2Check.IsChecked = _vm.OpenWithPoE2;
+        AppDebugModeBtn.IsChecked = _vm.AppDebugMode;
         // Sync capture mode selection
         for (var i = 0; i < CaptureModeCombo.Items.Count; i++)
         {
@@ -472,6 +473,7 @@ public sealed partial class DashboardWindow : Window
         _vm.OpenWithPoE2 = OpenWithPoE2Check.IsChecked == true;
         _vm.AutoUpdate = AutoUpdateCheck.IsChecked == true;
         _vm.BringToForeground = BringToForegroundCheck.IsChecked == true;
+        _vm.AppDebugMode = AppDebugModeBtn.IsChecked == true;
         _vm.AlwaysOnTop = AlwaysOnTopCheck.IsChecked == true;
         if (_vm.AlwaysOnTop)
             ForceTopmost();
@@ -791,6 +793,12 @@ public sealed partial class DashboardWindow : Window
         _onBugReportCancel?.Invoke();
     }
 
+    private void AppDebugMode_Click(object sender, RoutedEventArgs e)
+    {
+        _vm.AppDebugMode = AppDebugModeBtn.IsChecked == true;
+        _vm.SaveSettings();
+    }
+
     private void BugReport_Click(object sender, RoutedEventArgs e)
     {
         if (_onBugReportTrigger is null)
@@ -1017,6 +1025,11 @@ public sealed partial class DashboardWindow : Window
         _vm.OnReRunSetup = trigger;
     }
 
+    public void SetRitualSetupTrigger(Action trigger)
+    {
+        _vm.OnRitualSetup = trigger;
+    }
+
     public void ShowUpdateOverlay()
     {
         Dispatcher.Invoke(() =>
@@ -1117,6 +1130,8 @@ public sealed partial class DashboardWindow : Window
     }
 
     private void ReRunSetup_Click(object sender, RoutedEventArgs e) { ToggleSettings(); _vm.OnReRunSetup?.Invoke(); }
+
+    private void RitualSetup_Click(object sender, RoutedEventArgs e) { ToggleSettings(); _vm.OnRitualSetup?.Invoke(); }
 
     private void ToolTip_Loaded(object sender, RoutedEventArgs e)
     {
