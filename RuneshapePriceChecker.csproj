@@ -13,6 +13,8 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <NoWarn>$(NoWarn);CA1873;CA2101</NoWarn>
     <AssemblyName>RuneshapePriceChecker</AssemblyName>
+    <Version>1.0.9.103</Version>
+    <InformationalVersion>1.0.9.103W</InformationalVersion>
     <ApplicationIcon>img\rune.ico</ApplicationIcon>
   </PropertyGroup>
 

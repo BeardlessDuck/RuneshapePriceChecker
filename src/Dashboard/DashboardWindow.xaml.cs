@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -1480,7 +1480,7 @@ public sealed partial class DashboardWindow : Window
         SetSlotText(DbgSlotRecognizeFull, slots, DebugMetricsCollector.SlotIndex.Recognize);
         SetSlotText(DbgSlotTsv, slots, DebugMetricsCollector.SlotIndex.TsvParse);
         SetSlotText(DbgSlotPost, slots, DebugMetricsCollector.SlotIndex.PostProcess);
-        _ = (DbgSlotCacheHitFull?.Text = snap.CacheHits > 0 ? $"{snap.CacheHits:N0}" : "—");
+        if (DbgSlotCacheHitFull != null) DbgSlotCacheHitFull.Text = snap.CacheHits > 0 ? $"{snap.CacheHits:N0}" : "—";
 
         // Toggle slot breakdown layout based on OCR backend.
         // Fall back to the combo box if the metrics snapshot hasn't updated yet.
@@ -1488,8 +1488,8 @@ public sealed partial class DashboardWindow : Window
         var backendFromCombo = (OcrBackendCombo.SelectedItem as string)?.ToLowerInvariant() ?? "";
         var isTesseract = backendFromSnapshot.Contains("tesseract", StringComparison.OrdinalIgnoreCase)
             || backendFromCombo.Contains("tesseract", StringComparison.OrdinalIgnoreCase);
-        _ = (SlotBreakdownCompact?.Visibility = isTesseract ? Visibility.Collapsed : Visibility.Visible);
-        _ = (SlotBreakdownFull?.Visibility = isTesseract ? Visibility.Visible : Visibility.Collapsed);
+        if (SlotBreakdownCompact != null) SlotBreakdownCompact.Visibility = isTesseract ? Visibility.Collapsed : Visibility.Visible;
+        if (SlotBreakdownFull != null) SlotBreakdownFull.Visibility = isTesseract ? Visibility.Visible : Visibility.Collapsed;
 
         // Check PoE2 foreground directly so the status updates independently of OCR capture timing.
         var isForeground = false;
@@ -2335,11 +2335,14 @@ public sealed class LogEntryViewModel : INotifyPropertyChanged
     public Brush? ForegroundBrush { get; set; }
     public Microsoft.Extensions.Logging.LogLevel LogLevel { get; set; }
 
-    public string TimestampText { get; set { field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TimestampText))); } } = "";
+    private string _timestampText = "";
+    public string TimestampText { get => _timestampText; set { _timestampText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TimestampText))); } }
 
-    public string MessageText { get; set { field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MessageText))); } } = "";
+    private string _messageText = "";
+    public string MessageText { get => _messageText; set { _messageText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MessageText))); } }
 
-    public string CountText { get; set { field = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountText))); } } = "";
+    private string _countText = "";
+    public string CountText { get => _countText; set { _countText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountText))); } }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

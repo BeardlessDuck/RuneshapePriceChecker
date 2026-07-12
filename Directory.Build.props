@@ -4,7 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.8</Version>
+    <Version>1.0.9.103</Version>
+    <InformationalVersion>1.0.9.103W</InformationalVersion>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <RunAnalyzersOnEveryBuild>true</RunAnalyzersOnEveryBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>

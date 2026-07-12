@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using RuneshapePriceChecker.App.Dashboard;
@@ -186,7 +186,9 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
 
         try
         {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: Calling CaptureAndRecognize");
             var rawText = CaptureAndRecognize(out var attemptedRecognition, out var fromCache);
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: CaptureAndRecognize returned");
             if (!attemptedRecognition)
             {
                 _lastSnapshot = null;
@@ -226,8 +228,12 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
                 try
                 {
                     var stride = data.Stride;
-                    var bytes = new byte[Math.Abs(stride) * pbmp.Height];
-                    Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+                    var absStride = Math.Abs(stride);
+                    var bytes = new byte[absStride * pbmp.Height];
+                    for (var y = 0; y < pbmp.Height; y++)
+                    {
+                        Marshal.Copy(data.Scan0 + (y * stride), bytes, y * absStride, absStride);
+                    }
 
                     // Text column starts at PanelLeftFraction — don't scan left of it
                     var textColStart = (int)(pbmp.Width * _options.CurrentValue.PanelLeftFraction);
@@ -244,7 +250,7 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
                         var maxX = 0;
                         for (var ry = y; ry < yEnd; ry++)
                         {
-                            var rowOffset = ry * stride;
+                            var rowOffset = ry * Math.Abs(stride);
                             for (var rx = textColStart; rx < pbmp.Width; rx++)
                             {
                                 if (bytes[rowOffset + (rx * 3)] < 128)
@@ -454,11 +460,13 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
             (int)(region.Height * opts.PanelTopRowFraction));
         using (var preCapturePerf = _perf.Measure(OcrPerfTiming.Slot.AnchorCheck))
         {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: CaptureDesktopRegionDirect (pre-capture check)");
             using var scanBitmap = CaptureDesktopRegionDirect(scanRect);
             if (scanBitmap is null || !TryDetectPanelOpen(scanBitmap, options, region))
             {
                 _metrics.AnchorCheckFails++;
                 _metrics.InterfaceDetected = false;
+                RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: TryDetectPanelOpen failed or null");
                 return string.Empty;
             }
             _metrics.AnchorCheckPasses++;
@@ -468,7 +476,9 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
         string captureMethod;
         using (_perf.Measure(OcrPerfTiming.Slot.Capture))
         {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling _captureStrategy.Capture");
             captureResult = _captureStrategy.Capture(region, _windowResolutionProvider.CurrentWindowCaptureContext, options);
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: _captureStrategy.Capture returned");
             captureMethod = captureResult.Method;
         }
 
@@ -534,16 +544,25 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
 #pragma warning disable CA2000 // Ownership transferred; disposed at method exit via explicit Dispose calls
         Bitmap masked;
         using (_perf.Measure(OcrPerfTiming.Slot.KeepBlack))
+        {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling KeepBlackAndNeighbors");
             masked = OcrImagePreprocessor.KeepBlackAndNeighbors(capturedBitmap);
+        }
         Bitmap preprocessed;
         using (_perf.Measure(OcrPerfTiming.Slot.Preprocess))
+        {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling PreprocessForOcr");
             preprocessed = OcrImagePreprocessor.PreprocessForOcr(masked, options);
+        }
 #pragma warning restore CA2000
         _lastPreprocessedBitmap?.Dispose();
         _lastPreprocessedBitmap = new Bitmap(preprocessed);
         Rectangle? crop;
         using (_perf.Measure(OcrPerfTiming.Slot.PostProcess))
+        {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling FindContentBounds");
             crop = OcrImagePreprocessor.FindContentBounds(preprocessed);
+        }
 
         // Shift the left edge of the scan region from the icon column to the
         // panel text column, so rune icons don't inflate row widths and confuse
@@ -572,7 +591,11 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
 
         int[] rowYs, rowHeights;
         using (_perf.Measure(OcrPerfTiming.Slot.PostProcess))
+        {
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: calling DetectRowPositions");
             (rowYs, rowHeights) = OcrPipeline.DetectRowPositions(preprocessed, crop);
+            RuneshapePriceChecker.Startup.TraceLogger.Log("OcrLeagueWindowReader: DetectRowPositions returned");
+        }
         _lastOcrRowHeights = rowHeights;
         _lastOcrRowYPositions = rowYs;
         _lastCropBounds = crop;
@@ -630,9 +653,11 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
                         string? text;
                         try
                         {
+                            RuneshapePriceChecker.Startup.TraceLogger.Log($"OcrLeagueWindowReader: PrepareRowBitmap row={i}");
                             var rowBitmap = OcrPipeline.PrepareRowBitmap(preprocessed, crop, rowYs[i], rowHeights[i]);
                             try
                             {
+                                RuneshapePriceChecker.Startup.TraceLogger.Log($"OcrLeagueWindowReader: RecognizeSingleLine row={i}");
                                 text = engine.RecognizeSingleLine(rowBitmap);
                             }
                             finally
@@ -804,7 +829,7 @@ public sealed class OcrLeagueWindowReader : ILeagueWindowReader, IDisposable
                 const int stepY = 4;
                 for (var y = 0; y < data.Height; y += stepY)
                 {
-                    Marshal.Copy(data.Scan0 + (y * stride), rowBytes, 0, stride);
+                    Marshal.Copy(data.Scan0 + (y * data.Stride), rowBytes, 0, stride);
                     for (var x = 0; x < data.Width; x += stepX)
                     {
                         var idx = x * bpp;

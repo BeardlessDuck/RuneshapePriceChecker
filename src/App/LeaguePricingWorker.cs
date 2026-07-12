@@ -80,9 +80,11 @@ public sealed class LeaguePricingWorker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            logger.LogTrace("LeaguePricingWorker loop iteration");
             try
             {
+                logger.LogTrace("LeaguePricingWorker loop iteration");
+                try
+                {
                 // Close with PoE2: shut down when the game exits.
                 // Process.GetProcessesByName is expensive so use a 5-second cache.
                 if (appOptions.CurrentValue.CloseWithPoE2)
@@ -132,6 +134,7 @@ public sealed class LeaguePricingWorker(
                     {
                         lastOcrStart = Stopwatch.GetTimestamp();
                         logger.LogTrace("Worker: starting OCR task");
+                        RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: calling StartSnapshotReadTask");
                         inFlightSnapshotTask = StartSnapshotReadTask(reader, stoppingToken);
                     }
                     else
@@ -154,7 +157,9 @@ public sealed class LeaguePricingWorker(
                     {
                         _lastOcrDurationMs = Stopwatch.GetElapsedTime(lastOcrStart).TotalMilliseconds;
                         logger.LogTrace("Worker: OCR task completed, reading snapshot");
+                        RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: await inFlightSnapshotTask");
                         latestSnapshot = await inFlightSnapshotTask.ConfigureAwait(false);
+                        RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: snapshot retrieved");
                         hasCompletedSnapshot = true;
                         logger.LogTrace("Worker: snapshot has {Count} items, interfaceDetected={Detected}", latestSnapshot.ItemNames.Count, latestSnapshot.InterfaceDetected);
                     }
@@ -346,12 +351,20 @@ public sealed class LeaguePricingWorker(
                 if (dashboard.Metrics is { } m)
                     m.DebugOverlayActive = ocrOptions.CurrentValue.DebugOverlay;
                 logger.LogTrace("Worker: calling Render");
+                RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: calling overlayRenderer.Render");
                 overlayRenderer.Render(snapshot, prices);
+                RuneshapePriceChecker.Startup.TraceLogger.Log("Worker: Render complete");
                 logger.LogTrace("Worker: Render complete");
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to render overlay snapshot: {Context}", ErrorContext.FromException(ex));
+            }
+            }
+            catch (Exception ex)
+            {
+                RuneshapePriceChecker.Startup.CrashLogger.WriteCrash("Fatal BackgroundService Error", ex);
+                throw;
             }
         }
     }

@@ -10,8 +10,14 @@ It reads item rows from the runeshape panel with OCR (Optical Character Recognit
 - Your in-game **UI Brightness** setting under **Graphics** must be above `-0.8` (ideally `0.0` or higher). Lower values may cause incorrect item matching or prevent text detection entirely.
 - **Borderless Windowed** or **Windowed** display mode — exclusive fullscreen blocks screen capture. The tool warns you if it detects fullscreen.
 
+## Recent Changes (1.0.9.103W)
+- **Crash Fix**: Resolved a `0xc0000005` memory access violation crash in `OcrImagePreprocessor` related to unmanaged memory copying.
+- **Diagnostics**: Added additional Trace-level logging in the OCR services. This logging was added specifically while debugging the crash mentioned above.
+
+This repository is a fork maintained by BeardlessDuck. The original project was created by Barragek0.
+
 ## Download
-The latest version can be downloaded here: https://github.com/Barragek0/RuneshapePriceChecker/releases/
+The latest version can be downloaded here: https://github.com/BeardlessDuck/RuneshapePriceChecker/releases/
 - If you want the portable version, download `RuneshapePriceChecker.zip` and extract it to any folder, then run the .exe.
 - If you'd rather use an installer, download `RuneshapePriceChecker-Installer.exe` and run it.
 
