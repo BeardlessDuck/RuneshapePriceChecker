@@ -155,12 +155,12 @@ internal sealed partial class NativeTesseractEngine : IDisposable
         var height = bitmap.Height;
         var rect = new Rectangle(0, 0, width, height);
         var data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+        var absStride = Math.Abs(data.Stride);
         try
         {
-            var stride = data.Stride;
             var rowBytes = width * 3;
-            var padBytes = stride - rowBytes; // DWORD padding
-            var pixelDataSize = stride * height;
+            var padBytes = absStride - rowBytes; // DWORD padding
+            var pixelDataSize = absStride * height;
             var fileSize = 54 + pixelDataSize;
 
             var bmpBytes = new byte[fileSize];
@@ -174,6 +174,8 @@ internal sealed partial class NativeTesseractEngine : IDisposable
             // BITMAPINFOHEADER
             _ = BitConverter.TryWriteBytes(bmpBytes.AsSpan(14), 40);
             _ = BitConverter.TryWriteBytes(bmpBytes.AsSpan(18), width);
+            // BMP height is negative to indicate top-down DIB if we just dumped it top-down. 
+            // But we are explicitly writing it bottom-to-top, so positive height is correct.
             _ = BitConverter.TryWriteBytes(bmpBytes.AsSpan(22), height);
             bmpBytes[26] = 1; // planes
             bmpBytes[28] = 24; // bpp
@@ -183,9 +185,9 @@ internal sealed partial class NativeTesseractEngine : IDisposable
             var srcPtr = data.Scan0;
             for (var y = height - 1; y >= 0; y--)
             {
-                var srcRow = IntPtr.Add(srcPtr, y * stride);
-                var dstOffset = 54 + ((height - 1 - y) * stride);
-                Marshal.Copy(srcRow, bmpBytes, dstOffset, stride);
+                var srcRow = IntPtr.Add(srcPtr, y * data.Stride);
+                var dstOffset = 54 + ((height - 1 - y) * absStride);
+                Marshal.Copy(srcRow, bmpBytes, dstOffset, absStride);
             }
 
             return NativeMethods.pixReadMem(bmpBytes, bmpBytes.Length);

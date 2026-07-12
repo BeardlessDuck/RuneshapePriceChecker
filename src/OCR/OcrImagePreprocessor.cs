@@ -6,6 +6,16 @@ namespace RuneshapePriceChecker.OCR;
 
 internal static class OcrImagePreprocessor
 {
+    private static byte[] CopyPixelsFrom(BitmapData data)
+    {
+        return data.CopyPixels();
+    }
+
+    private static void CopyPixelsTo(byte[] bytes, BitmapData data)
+    {
+        data.CopyPixelsTo(bytes);
+    }
+
     public static string[] SplitAndTrim(string text)
     {
         return text
@@ -22,7 +32,6 @@ internal static class OcrImagePreprocessor
             File.Delete(path);
         bitmap.Save(path, ImageFormat.Png);
     }
-
     public static Bitmap KeepBlackAndNeighbors(Bitmap source)
     {
         var width = source.Width;
@@ -30,21 +39,19 @@ internal static class OcrImagePreprocessor
         var rect = new Rectangle(0, 0, width, height);
         var srcData = source.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
         var stride = srcData.Stride;
-        var length = Math.Abs(stride) * height;
-        var srcBytes = new byte[length];
-        Marshal.Copy(srcData.Scan0, srcBytes, 0, length);
+        var absStride = Math.Abs(stride);
+        var length = absStride * height;
+        var srcBytes = srcData.CopyPixels();
         source.UnlockBits(srcData);
 
         // Flat 1D byte array for mask: 0=discard, 1=keep. Better cache locality than bool[,].
         var keep = new byte[width * height];
-
-        // First pass: for each sufficiently dark pixel, mark a neighborhood as kept.
         // At 1440p+ the game renders more detail, so use a stricter threshold (13)
         // to avoid picking up rune/UI noise as text rows. on 1080p and lower, 15 is fine.
         var blackThreshold = width >= 600 ? 13 : 15;
         for (var y = 0; y < height; y++)
         {
-            var rowOffset = y * stride;
+            var rowOffset = y * Math.Abs(stride);
             for (var x = 0; x < width; x++)
             {
                 var idx = rowOffset + (x * 3);
@@ -71,7 +78,7 @@ internal static class OcrImagePreprocessor
         // the filter should be safe.
         for (var y = 0; y < height; y++)
         {
-            var srcRow = y * stride;
+            var srcRow = y * Math.Abs(stride);
             for (var x = 0; x < width; x++)
             {
                 var si = srcRow + (x * 3);
@@ -95,8 +102,8 @@ internal static class OcrImagePreprocessor
 
         for (var y = 0; y < height; y++)
         {
-            var srcRow = y * stride;
-            var dstRow = y * dstStride;
+            var srcRow = y * Math.Abs(stride);
+            var dstRow = y * Math.Abs(dstStride);
             var keepRow = y * width;
             for (var x = 0; x < width; x++)
             {
@@ -140,14 +147,12 @@ internal static class OcrImagePreprocessor
             var kernelRadius = Math.Clamp(Math.Min(width, height) / 40, 4, 10);
             var contrastBias = Math.Clamp((threshold - 100) / 6, 6, 20);
 
-            var length = Math.Abs(data.Stride) * data.Height;
-            var bytes = new byte[length];
-            Marshal.Copy(data.Scan0, bytes, 0, length);
+            var bytes = CopyPixelsFrom(data);
             var grayscalePixels = new byte[width * height];
 
             for (var y = 0; y < height; y++)
             {
-                var rowOffset = y * data.Stride;
+                var rowOffset = y * Math.Abs(data.Stride);
                 var grayOffset = y * width;
                 for (var x = 0; x < width; x++)
                 {
@@ -199,7 +204,7 @@ internal static class OcrImagePreprocessor
 
             for (var y = 0; y < height; y++)
             {
-                var rowOffset = y * data.Stride;
+                var rowOffset = y * Math.Abs(data.Stride);
                 var binaryOffset = y * width;
                 for (var x = 0; x < width; x++)
                 {
@@ -211,7 +216,7 @@ internal static class OcrImagePreprocessor
                 }
             }
 
-            Marshal.Copy(bytes, 0, data.Scan0, length);
+            CopyPixelsTo(bytes, data);
             grayscale.UnlockBits(data);
             var result = grayscale;
             grayscale = null;
@@ -238,8 +243,7 @@ internal static class OcrImagePreprocessor
         var srcRect = new Rectangle(0, 0, srcW, srcH);
         var srcData = source.LockBits(srcRect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
         var srcStride = srcData.Stride;
-        var srcBytes = new byte[Math.Abs(srcStride) * srcH];
-        Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
+        var srcBytes = CopyPixelsFrom(srcData);
         source.UnlockBits(srcData);
 
         var upscaled = new Bitmap(dstW, dstH, PixelFormat.Format24bppRgb);
@@ -271,7 +275,7 @@ internal static class OcrImagePreprocessor
             }
         }
 
-        Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
+        CopyPixelsTo(dstBytes, dstData);
         upscaled.UnlockBits(dstData);
         return upscaled;
     }
@@ -301,14 +305,13 @@ internal static class OcrImagePreprocessor
             var srcRect = new Rectangle(0, 0, srcW, srcH);
             var srcData = source.LockBits(srcRect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
             var srcStride = srcData.Stride;
-            var srcBytes = new byte[Math.Abs(srcStride) * srcH];
-            Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
+            var srcBytes = CopyPixelsFrom(srcData);
             source.UnlockBits(srcData);
 
             for (var y = 0; y < srcH; y++)
             {
-                var srcRow = y * srcStride;
-                var dstRow = ((y + border) * dstStride) + (border * 3);
+                var srcRow = y * Math.Abs(srcStride);
+                var dstRow = ((y + border) * Math.Abs(dstStride)) + (border * 3);
                 for (var x = 0; x < srcW; x++)
                 {
                     var si = srcRow + (x * 3);
@@ -320,7 +323,7 @@ internal static class OcrImagePreprocessor
             }
         }
 
-        Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
+        CopyPixelsTo(dstBytes, dstData);
         bordered.UnlockBits(dstData);
         return bordered;
     }
@@ -334,9 +337,7 @@ internal static class OcrImagePreprocessor
         try
         {
             var stride = data.Stride;
-            var len = Math.Abs(stride) * height;
-            var bytes = new byte[len];
-            Marshal.Copy(data.Scan0, bytes, 0, len);
+            var bytes = CopyPixelsFrom(data);
 
             var minX = width;
             var minY = height;
@@ -402,14 +403,13 @@ internal static class OcrImagePreprocessor
             var srcBpp = Image.GetPixelFormatSize(source.PixelFormat) / 8;
             var srcStride = srcData.Stride;
             var dstStride = dstData.Stride;
-            var srcBytes = new byte[Math.Abs(srcStride) * h];
+            var srcBytes = CopyPixelsFrom(srcData);
             var dstBytes = new byte[Math.Abs(dstStride) * h];
-            Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
 
             for (var y = 0; y < h; y++)
             {
-                var srcRow = y * srcStride;
-                var dstRow = y * dstStride;
+                var srcRow = y * Math.Abs(srcStride);
+                var dstRow = y * Math.Abs(dstStride);
                 for (var x = 0; x < w; x++)
                 {
                     var si = srcRow + (x * srcBpp);
@@ -424,7 +424,7 @@ internal static class OcrImagePreprocessor
                     dstBytes[di + 2] = lum;
                 }
             }
-            Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
+            CopyPixelsTo(dstBytes, dstData);
         }
         finally
         {
@@ -464,9 +464,7 @@ internal static class OcrImagePreprocessor
             var width = data.Width;
             var height = data.Height;
             var stride = data.Stride;
-            var rawLength = Math.Abs(stride) * height;
-            var raw = new byte[rawLength];
-            Marshal.Copy(data.Scan0, raw, 0, rawLength);
+            var raw = CopyPixelsFrom(data);
 
             var rgb = new byte[width * height * 3];
             for (var y = 0; y < height; y++)
@@ -570,3 +568,4 @@ internal static class OcrImagePreprocessor
         }
     }
 }
+

@@ -1,4 +1,4 @@
-﻿using System.Drawing.Imaging;
+using System.Drawing.Imaging;
 using Microsoft.Extensions.Logging;
 
 namespace RuneshapePriceChecker.OCR;
@@ -50,13 +50,12 @@ internal static class OcrPipeline
         var data = source.LockBits(srcRect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
         var stride = data.Stride;
         var length = Math.Abs(stride) * scanH;
-        var bytes = new byte[length];
-        System.Runtime.InteropServices.Marshal.Copy(data.Scan0, bytes, 0, length);
+        var bytes = data.CopyPixels();
         source.UnlockBits(data);
 
         for (var y = 0; y < scanH; y++)
         {
-            var rowOffset = y * stride;
+            var rowOffset = y * Math.Abs(stride);
             var count = 0;
             for (var x = 0; x < scanW; x++)
             {

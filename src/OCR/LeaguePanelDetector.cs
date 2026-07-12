@@ -76,7 +76,7 @@ public sealed class LeaguePanelDetector(IOptionsMonitor<OcrOptions>? options = n
             var bytes = System.Buffers.ArrayPool<byte>.Shared.Rent(len);
             try
             {
-                Marshal.Copy(data.Scan0, bytes, 0, len);
+                data.CopyPixelsTo(bytes);
 
                 long totalBrightness = 0;
                 int totalCount = 0;
@@ -85,7 +85,7 @@ public sealed class LeaguePanelDetector(IOptionsMonitor<OcrOptions>? options = n
 
                 for (int y = 0; y < bmp.Height; y++)
                 {
-                    int rowOff = y * stride;
+                    int rowOff = y * Math.Abs(stride);
                     for (int cx = 0; cx < bmp.Width; cx++)
                     {
                         int idx = rowOff + (cx * bpp);

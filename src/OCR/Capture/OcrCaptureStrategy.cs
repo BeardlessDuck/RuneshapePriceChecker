@@ -77,9 +77,8 @@ internal sealed partial class OcrCaptureStrategy(ILogger<OcrCaptureStrategy> log
         var data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
         try
         {
-            var length = Math.Abs(data.Stride) * data.Height;
-            var bytes = new byte[length];
-            Marshal.Copy(data.Scan0, bytes, 0, length);
+            var absStride = Math.Abs(data.Stride);
+            var bytes = data.CopyPixels();
 
             var min = 255;
             var max = 0;
@@ -88,7 +87,7 @@ internal sealed partial class OcrCaptureStrategy(ILogger<OcrCaptureStrategy> log
 
             for (var y = 0; y < data.Height; y++)
             {
-                var row = y * data.Stride;
+                var row = y * absStride;
                 for (var x = 0; x < data.Width; x++)
                 {
                     var index = row + (x * 3);
